@@ -54,24 +54,24 @@ Please return to the main terminal to choose an option:
 1. Close VSCode automatically (recommended)
 2. Exit and close manually
 
-This warning window will close automatically in 30 seconds."
+Press Enter to close this warning window when ready."
 
     # Try different terminal emulators to open visible window
     if command -v gnome-terminal &>/dev/null; then
         log "INFO" "Opening warning terminal window with gnome-terminal"
-        gnome-terminal --title='VSCode Update Warning' --geometry=80x20 -- bash -c "echo '$warning_message'; sleep 30" &
+        gnome-terminal --title='VSCode Update Warning' --geometry=80x20 -- bash -c "echo '$warning_message'; read -r" &
         return 0
     elif command -v xfce4-terminal &>/dev/null; then
         log "INFO" "Opening warning terminal window with xfce4-terminal"
-        xfce4-terminal --title='VSCode Update Warning' --geometry=80x20 --command="bash -c \"echo '$warning_message'; sleep 30\"" &
+        xfce4-terminal --title='VSCode Update Warning' --geometry=80x20 --command="bash -c \"echo '$warning_message'; read -r\"" &
         return 0
     elif command -v konsole &>/dev/null; then
         log "INFO" "Opening warning terminal window with konsole"
-        konsole --title 'VSCode Update Warning' -e bash -c "echo '$warning_message'; sleep 30" &
+        konsole --title 'VSCode Update Warning' -e bash -c "echo '$warning_message'; read -r" &
         return 0
     elif command -v xterm &>/dev/null; then
         log "INFO" "Opening warning terminal window with xterm"
-        xterm -title 'VSCode Update Warning' -geometry 80x20 -e bash -c "echo '$warning_message'; sleep 30" &
+        xterm -title 'VSCode Update Warning' -geometry 80x20 -e bash -c "echo '$warning_message'; read -r" &
         return 0
     fi
 
