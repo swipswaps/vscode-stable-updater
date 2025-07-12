@@ -42,14 +42,57 @@ log() {
     esac
 }
 
+# Open visible warning terminal window
+open_warning_terminal() {
+    local warning_message="⚠️  VSCode $VSCODE_EDITION Update Warning ⚠️
+
+VSCode $VSCODE_EDITION is currently running and must be closed before updating.
+
+Running processes: $1
+
+Please return to the main terminal to choose an option:
+1. Close VSCode automatically (recommended)
+2. Exit and close manually
+
+This warning window will close automatically in 30 seconds."
+
+    # Try different terminal emulators to open visible window
+    if command -v gnome-terminal &>/dev/null; then
+        log "INFO" "Opening warning terminal window with gnome-terminal"
+        gnome-terminal --title='VSCode Update Warning' --geometry=80x20 -- bash -c "echo '$warning_message'; sleep 30" &
+        return 0
+    elif command -v xfce4-terminal &>/dev/null; then
+        log "INFO" "Opening warning terminal window with xfce4-terminal"
+        xfce4-terminal --title='VSCode Update Warning' --geometry=80x20 --command="bash -c \"echo '$warning_message'; sleep 30\"" &
+        return 0
+    elif command -v konsole &>/dev/null; then
+        log "INFO" "Opening warning terminal window with konsole"
+        konsole --title 'VSCode Update Warning' -e bash -c "echo '$warning_message'; sleep 30" &
+        return 0
+    elif command -v xterm &>/dev/null; then
+        log "INFO" "Opening warning terminal window with xterm"
+        xterm -title 'VSCode Update Warning' -geometry 80x20 -e bash -c "echo '$warning_message'; sleep 30" &
+        return 0
+    fi
+
+    log "WARN" "No suitable terminal emulator found - showing warning in current terminal"
+    return 1
+}
+
 # Check if VSCode is running - IMMEDIATE WARNING
 check_vscode_running() {
     log "INFO" "Checking if VSCode $VSCODE_EDITION is running..."
-    
+
     local vscode_pids
     mapfile -t vscode_pids < <(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true)
-    
+
     if [[ ${#vscode_pids[@]} -gt 0 ]]; then
+        # Open warning terminal window
+        if open_warning_terminal "${vscode_pids[*]}"; then
+            log "INFO" "Warning terminal window opened"
+            sleep 2  # Give terminal time to appear
+        fi
+
         echo ""
         echo "⚠️  WARNING: VSCode $VSCODE_EDITION is currently running!"
         echo "Running processes: ${vscode_pids[*]}"
@@ -59,7 +102,7 @@ check_vscode_running() {
         echo "1. Close VSCode automatically (recommended)"
         echo "2. Exit and close manually"
         echo ""
-        
+
         if [[ "${AUTO_INSTALL:-0}" == "1" ]]; then
             echo "Auto-install mode: Closing VSCode automatically..."
             pkill -f "$VSCODE_PROCESS_NAME" || true
@@ -67,7 +110,7 @@ check_vscode_running() {
         else
             read -r -p "Choose (1-2) [default: 2]: " choice
             choice="${choice:-2}"
-            
+
             case "$choice" in
                 1)
                     echo "Closing VSCode $VSCODE_EDITION..."
@@ -81,14 +124,14 @@ check_vscode_running() {
                     ;;
             esac
         fi
-        
+
         # Verify VSCode is closed
         if pgrep -f "$VSCODE_PROCESS_NAME" >/dev/null 2>&1; then
             log "ERROR" "VSCode $VSCODE_EDITION is still running. Please close it manually."
             exit 1
         fi
     fi
-    
+
     log "SUCCESS" "VSCode $VSCODE_EDITION is not running"
 }
 
