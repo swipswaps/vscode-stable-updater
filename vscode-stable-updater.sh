@@ -289,6 +289,38 @@ acquire_lock() {
     log "DEBUG" "Lock acquired: $LOCK_FILE"
 }
 
+# ========== TERMINAL AUTOMATION ==========
+open_warning_terminal() {
+    local message="$1"
+    local title="VSCode Updater Warning"
+
+    # Try different terminal emulators in order of preference
+    local terminals=(
+        "gnome-terminal --title='$title' --"
+        "konsole --title '$title' -e"
+        "xfce4-terminal --title='$title' -e"
+        "xterm -title '$title' -e"
+        "urxvt -title '$title' -e"
+        "alacritty --title '$title' -e"
+        "kitty --title '$title'"
+    )
+
+    for terminal_cmd in "${terminals[@]}"; do
+        if command -v "${terminal_cmd%% *}" &>/dev/null; then
+            log "DEBUG" "Opening warning terminal with: $terminal_cmd"
+            # Open terminal with warning message
+            $terminal_cmd bash -c "echo '$message'; echo ''; echo 'Press Enter to continue...'; read -r" &
+            local terminal_pid=$!
+            BACKGROUND_PIDS+=("$terminal_pid")
+            log "INFO" "Warning terminal opened (PID: $terminal_pid)"
+            return 0
+        fi
+    done
+
+    log "WARN" "No suitable terminal emulator found for warning display"
+    return 1
+}
+
 # ========== VSCODE PROCESS MANAGEMENT ==========
 check_vscode_running() {
     log "INFO" "Checking if VSCode $VSCODE_EDITION is running..."
@@ -298,6 +330,25 @@ check_vscode_running() {
 
     if [[ ${#vscode_pids[@]} -gt 0 ]]; then
         log "WARN" "VSCode $VSCODE_EDITION is currently running (PIDs: ${vscode_pids[*]})"
+
+        # Open warning terminal to alert user
+        local warning_message="⚠️  VSCode $VSCODE_EDITION Update Warning ⚠️
+
+VSCode $VSCODE_EDITION is currently running and must be closed before updating.
+
+Running processes: ${vscode_pids[*]}
+
+Please choose an option in the main terminal:
+1. Close VSCode automatically (recommended)
+2. Close VSCode manually and continue
+3. Exit and close manually
+
+The main script is waiting for your decision..."
+
+        if open_warning_terminal "$warning_message"; then
+            log "INFO" "Warning terminal opened - user notified about running VSCode"
+            sleep 2  # Give terminal time to open and be visible
+        fi
 
         if [[ "${AUTO_INSTALL:-0}" == "1" ]]; then
             log "INFO" "Auto-install mode: Attempting to close VSCode gracefully..."
