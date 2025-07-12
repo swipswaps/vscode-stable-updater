@@ -13,6 +13,18 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Error handling to prevent crashes
+handle_error() {
+    local exit_code=$?
+    echo ""
+    echo "❌ Script encountered an error (exit code: $exit_code)"
+    echo "This may be due to VSCode process management issues"
+    echo "Please try running the script again"
+    exit $exit_code
+}
+
+trap handle_error ERR
+
 # Version and configuration
 SCRIPT_VERSION="2.0.0-alpha.2"
 VSCODE_EDITION="${VSCODE_EDITION:-stable}"
@@ -84,9 +96,19 @@ Choose your option and press Enter when ready..."
                 read -r choice;
                 choice=\${choice:-1};
                 if [[ \$choice == '1' ]]; then
-                    echo 'Closing VSCode automatically...';
-                    pkill -f '$VSCODE_PROCESS_NAME' || true;
-                    echo 'VSCode closed. You can close this window.';
+                    echo 'Attempting graceful VSCode shutdown...';
+                    # Try graceful shutdown first
+                    if command -v code &>/dev/null; then
+                        code --wait --command workbench.action.quit 2>/dev/null || true;
+                        sleep 3;
+                    fi
+                    # If still running, try SIGTERM (graceful)
+                    if pgrep -f '$VSCODE_PROCESS_NAME' >/dev/null; then
+                        echo 'Sending graceful shutdown signal...';
+                        pkill -TERM -f '$VSCODE_PROCESS_NAME' 2>/dev/null || true;
+                        sleep 5;
+                    fi
+                    echo 'VSCode shutdown attempted. You can close this window.';
                 else
                     echo 'Please close VSCode manually, then press Enter...';
                     read -r;
@@ -138,13 +160,23 @@ check_vscode_running() {
         echo "Press Ctrl+C to cancel if needed"
 
         # Wait for VSCode to be closed (either automatically or manually)
-        while pgrep -f "$VSCODE_PROCESS_NAME" >/dev/null 2>&1; do
+        local wait_count=0
+        local max_wait=60  # Maximum 2 minutes
+
+        while pgrep -f "$VSCODE_PROCESS_NAME" >/dev/null 2>&1 && [[ $wait_count -lt $max_wait ]]; do
             sleep 2
             echo -n "."
+            ((wait_count++))
         done
 
         echo ""
-        echo "✅ VSCode $VSCODE_EDITION has been closed"
+        if pgrep -f "$VSCODE_PROCESS_NAME" >/dev/null 2>&1; then
+            echo "⚠️  VSCode is still running after 2 minutes"
+            echo "Please close VSCode manually and run the script again"
+            exit 1
+        else
+            echo "✅ VSCode $VSCODE_EDITION has been closed"
+        fi
 
         # Verify VSCode is closed
         if pgrep -f "$VSCODE_PROCESS_NAME" >/dev/null 2>&1; then
