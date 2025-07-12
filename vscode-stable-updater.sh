@@ -56,23 +56,34 @@ Please return to the main terminal to choose an option:
 
 Press Enter to close this warning window when ready."
 
-    # Try different terminal emulators to open visible window
-    if command -v gnome-terminal &>/dev/null; then
-        log "INFO" "Opening warning terminal window with gnome-terminal"
-        gnome-terminal --title='VSCode Update Warning' --geometry=80x20 -- bash -c "echo '$warning_message'; read -r" &
-        return 0
-    elif command -v xfce4-terminal &>/dev/null; then
-        log "INFO" "Opening warning terminal window with xfce4-terminal"
-        xfce4-terminal --title='VSCode Update Warning' --geometry=80x20 --command="bash -c \"echo '$warning_message'; read -r\"" &
-        return 0
-    elif command -v konsole &>/dev/null; then
-        log "INFO" "Opening warning terminal window with konsole"
-        konsole --title 'VSCode Update Warning' -e bash -c "echo '$warning_message'; read -r" &
-        return 0
-    elif command -v xterm &>/dev/null; then
-        log "INFO" "Opening warning terminal window with xterm"
-        xterm -title 'VSCode Update Warning' -geometry 80x20 -e bash -c "echo '$warning_message'; read -r" &
-        return 0
+    # Use proven working method from rules files
+    local display="${DISPLAY:-:0}"
+
+    if command -v xfce4-terminal &>/dev/null; then
+        log "INFO" "Opening warning terminal window with xfce4-terminal (proven method)"
+        DISPLAY="$display" xfce4-terminal \
+            --window \
+            --geometry=80x20+100+100 \
+            --title='VSCode Update Warning' \
+            --execute bash -c "
+                echo '$warning_message';
+                echo '';
+                echo 'Press Enter to close this window...';
+                read -r
+            " &
+
+        # Wait for window to appear and verify
+        sleep 2
+        local window_count
+        window_count=$(xdotool search --name "VSCode Update Warning" 2>/dev/null | wc -l)
+
+        if [ "$window_count" -gt 0 ]; then
+            log "INFO" "Terminal window verified: $window_count window(s) opened"
+            return 0
+        else
+            log "WARN" "Terminal window may not have opened properly"
+            return 1
+        fi
     fi
 
     log "WARN" "No suitable terminal emulator found - showing warning in current terminal"
