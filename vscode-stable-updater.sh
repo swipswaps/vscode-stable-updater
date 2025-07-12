@@ -53,7 +53,8 @@ register_lock_file() {
 # Comprehensive cleanup function
 cleanup_all() {
     local exit_code=$?
-    local cleanup_start=$(date +%s)
+    local cleanup_start
+    cleanup_start=$(date +%s)
 
     [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Starting comprehensive cleanup (exit code: $exit_code)" >&2
 
@@ -126,7 +127,8 @@ cleanup_all() {
         systemctl stop "$service" 2>/dev/null || true
     done
 
-    local cleanup_end=$(date +%s)
+    local cleanup_end
+    cleanup_end=$(date +%s)
     local cleanup_duration=$((cleanup_end - cleanup_start))
     [[ "${DEBUG:-0}" == "1" ]] && echo "DEBUG: Cleanup completed in ${cleanup_duration}s" >&2
 
@@ -187,7 +189,8 @@ log() {
     local level="$1"
     shift
     local message="$*"
-    local timestamp=$(date '+%H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%H:%M:%S')
     
     case "$level" in
         "SUCCESS") echo -e "${timestamp} ✅ ${message}" ;;
@@ -261,6 +264,9 @@ get_system_info() {
     
     log "SUCCESS" "System detected: $DISTRO_NAME ($PACKAGE_MANAGER/$PACKAGE_FORMAT/$ARCH)"
     log "DEBUG" "VSCode Edition: $VSCODE_EDITION"
+    log "DEBUG" "Package Name: $VSCODE_PACKAGE_NAME"
+    log "DEBUG" "Distribution: $DISTRO_ID $DISTRO_VERSION"
+    log "DEBUG" "Install Command: $INSTALL_CMD"
     log "DEBUG" "Download URL: $DOWNLOAD_URL"
     log "DEBUG" "Config Directory: $VSCODE_CONFIG"
 }
@@ -268,7 +274,8 @@ get_system_info() {
 # ========== LOCK FILE MANAGEMENT ==========
 acquire_lock() {
     if [[ -f "$LOCK_FILE" ]]; then
-        local lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+        local lock_pid
+        lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
         if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
             log "ERROR" "Another instance is already running (PID: $lock_pid)"
             exit 1
@@ -286,7 +293,8 @@ acquire_lock() {
 check_vscode_running() {
     log "INFO" "Checking if VSCode $VSCODE_EDITION is running..."
 
-    local vscode_pids=($(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true))
+    local vscode_pids
+    mapfile -t vscode_pids < <(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true)
 
     if [[ ${#vscode_pids[@]} -gt 0 ]]; then
         log "WARN" "VSCode $VSCODE_EDITION is currently running (PIDs: ${vscode_pids[*]})"
@@ -303,7 +311,7 @@ check_vscode_running() {
             echo "3. Exit and close manually"
             echo ""
 
-            read -p "Choose (1-3) [default: 1]: " choice
+            read -r -p "Choose (1-3) [default: 1]: " choice
             choice=${choice:-1}
 
             case $choice in
@@ -312,7 +320,7 @@ check_vscode_running() {
                     ;;
                 2)
                     echo "Please close VSCode $VSCODE_EDITION and press Enter to continue..."
-                    read -r
+                    read -r _
                     check_vscode_running  # Recursive check
                     ;;
                 3)
@@ -333,7 +341,8 @@ check_vscode_running() {
 close_vscode_gracefully() {
     log "INFO" "Attempting to close VSCode $VSCODE_EDITION gracefully..."
 
-    local vscode_pids=($(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true))
+    local vscode_pids
+    mapfile -t vscode_pids < <(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true)
 
     if [[ ${#vscode_pids[@]} -eq 0 ]]; then
         log "SUCCESS" "VSCode $VSCODE_EDITION is already closed"
@@ -351,7 +360,8 @@ close_vscode_gracefully() {
     local max_wait=15
 
     while [[ $wait_time -lt $max_wait ]]; do
-        local remaining_pids=($(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true))
+        local remaining_pids
+        mapfile -t remaining_pids < <(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true)
         if [[ ${#remaining_pids[@]} -eq 0 ]]; then
             log "SUCCESS" "VSCode $VSCODE_EDITION closed gracefully"
             return 0
@@ -366,7 +376,8 @@ close_vscode_gracefully() {
     done
 
     # Force close if still running
-    local remaining_pids=($(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true))
+    local remaining_pids
+    mapfile -t remaining_pids < <(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true)
     if [[ ${#remaining_pids[@]} -gt 0 ]]; then
         log "WARN" "Force closing VSCode $VSCODE_EDITION (PIDs: ${remaining_pids[*]})"
         for pid in "${remaining_pids[@]}"; do
@@ -401,7 +412,8 @@ create_backup() {
         fi
     else
         # Simple built-in backup
-        local backup_dir="$HOME/vscode-${VSCODE_EDITION}-backup-$(date +%Y%m%d_%H%M%S)"
+        local backup_dir
+        backup_dir="$HOME/vscode-${VSCODE_EDITION}-backup-$(date +%Y%m%d_%H%M%S)"
 
         if [[ -d "$VSCODE_CONFIG" ]]; then
             log "INFO" "Creating simple backup: $backup_dir"
@@ -425,7 +437,8 @@ create_backup() {
 get_remote_file_info() {
     log "DEBUG" "Getting remote file information..."
 
-    local temp_file=$(mktemp)
+    local temp_file
+    temp_file=$(mktemp)
     register_temp_file "$temp_file"
 
     # Get headers from remote file
@@ -438,9 +451,12 @@ get_remote_file_info() {
     fi
 
     # Parse headers
-    local content_length=$(grep -i "content-length:" "$temp_file" | tail -1 | cut -d' ' -f2 | tr -d '\r\n' || echo "0")
-    local last_modified=$(grep -i "last-modified:" "$temp_file" | tail -1 | cut -d' ' -f2- | tr -d '\r\n' || echo "")
-    local etag=$(grep -i "etag:" "$temp_file" | tail -1 | cut -d' ' -f2 | tr -d '\r\n"' || echo "")
+    local content_length
+    local last_modified
+    local etag
+    content_length=$(grep -i "content-length:" "$temp_file" | tail -1 | cut -d' ' -f2 | tr -d '\r\n' || echo "0")
+    last_modified=$(grep -i "last-modified:" "$temp_file" | tail -1 | cut -d' ' -f2- | tr -d '\r\n' || echo "")
+    etag=$(grep -i "etag:" "$temp_file" | tail -1 | cut -d' ' -f2 | tr -d '\r\n' || echo "")
 
     # Save download info
     cat > "$DOWNLOAD_INFO" << EOF
@@ -464,7 +480,9 @@ smart_download() {
         return 1
     fi
 
+    # shellcheck source=/dev/null
     source "$DOWNLOAD_INFO"
+    # shellcheck disable=SC2153
     local total_size="$CONTENT_LENGTH"
     local resume_from=0
 
@@ -496,7 +514,8 @@ smart_download() {
             --retry 2 \
             --retry-delay 5; then
 
-            local final_size=$(stat -c%s "$CURRENT_DOWNLOAD" 2>/dev/null || echo "0")
+            local final_size
+            final_size=$(stat -c%s "$CURRENT_DOWNLOAD" 2>/dev/null || echo "0")
             if [[ "$final_size" -eq "$total_size" ]]; then
                 log "SUCCESS" "Download completed successfully ($(( final_size / 1024 / 1024 ))MB)"
                 return 0
@@ -561,7 +580,7 @@ verify_and_install() {
         echo "Package: $CURRENT_DOWNLOAD"
         echo "Size: $(( $(stat -c%s "$CURRENT_DOWNLOAD") / 1024 / 1024 ))MB"
         echo ""
-        read -p "Proceed with installation? (Y/n): " confirm
+        read -r -p "Proceed with installation? (Y/n): " confirm
         confirm=${confirm:-Y}
 
         if [[ "$confirm" != "Y" ]] && [[ "$confirm" != "y" ]]; then
@@ -747,7 +766,7 @@ main() {
     if ! create_backup; then
         if [[ "${AUTO_INSTALL:-0}" != "1" ]]; then
             log "ERROR" "Backup creation failed"
-            read -p "Continue without backup? (y/N): " continue_without_backup
+            read -r -p "Continue without backup? (y/N): " continue_without_backup
             if [[ "$continue_without_backup" != "y" ]] && [[ "$continue_without_backup" != "Y" ]]; then
                 exit 1
             fi
