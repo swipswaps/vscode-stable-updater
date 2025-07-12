@@ -36,30 +36,87 @@ jobs:
         test -x vscode-stable-updater.sh || exit 1
 
   test-compliance:
-    name: Test Augment Cleanup Rules Compliance
+    name: Test Augment Settings Compliance
     runs-on: ubuntu-latest
     needs: lint-and-validate
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Test compliance validation
+
+    - name: Test Comprehensive Script Cleanup Rules
       run: |
-        # Test that compliance check passes
-        SKIP_COMPLIANCE_CHECK=0 timeout 30 ./vscode-stable-updater.sh --help || true
-        
-    - name: Test required arrays exist
+        echo "Testing Script Cleanup Rules compliance..."
+
+        # Test resource tracking arrays
+        grep -q "TEMP_FILES=()" vscode-stable-updater.sh || exit 1
+        grep -q "TEMP_DIRS=()" vscode-stable-updater.sh || exit 1
+        grep -q "BACKGROUND_PIDS=()" vscode-stable-updater.sh || exit 1
+        grep -q "LOCK_FILES=()" vscode-stable-updater.sh || exit 1
+        grep -q "STARTED_SERVICES=()" vscode-stable-updater.sh || exit 1
+        echo "✅ Resource tracking arrays found"
+
+        # Test registration functions
+        grep -q "register_temp_file" vscode-stable-updater.sh || exit 1
+        grep -q "register_temp_dir" vscode-stable-updater.sh || exit 1
+        grep -q "register_background_pid" vscode-stable-updater.sh || exit 1
+        grep -q "register_lock_file" vscode-stable-updater.sh || exit 1
+        echo "✅ Registration functions found"
+
+        # Test cleanup function
+        grep -q "cleanup_all" vscode-stable-updater.sh || exit 1
+        echo "✅ Cleanup function found"
+
+        # Test signal handlers
+        grep -q "trap.*EXIT" vscode-stable-updater.sh || exit 1
+        echo "✅ Signal handlers found"
+
+    - name: Test Truthfulness Standards
       run: |
-        grep -q "TEMP_FILES=()" vscode-stable-updater.sh
-        grep -q "TEMP_DIRS=()" vscode-stable-updater.sh
-        grep -q "BACKGROUND_PIDS=()" vscode-stable-updater.sh
-        grep -q "LOCK_FILES=()" vscode-stable-updater.sh
-        
-    - name: Test trap handlers exist
+        echo "Testing Truthfulness Standards compliance..."
+
+        # Test error handling patterns
+        grep -q "log.*ERROR" vscode-stable-updater.sh || exit 1
+        grep -q "return 1" vscode-stable-updater.sh || exit 1
+        echo "✅ Error handling patterns found"
+
+        # Test no false success claims
+        ! grep -i "success.*failed" vscode-stable-updater.sh || exit 1
+        ! grep -i "completed.*error" vscode-stable-updater.sh || exit 1
+        echo "✅ No false success claims found"
+
+    - name: Test Environment Detection Standards
       run: |
-        grep -q "trap.*EXIT" vscode-stable-updater.sh
-        grep -q "cleanup_all" vscode-stable-updater.sh
+        echo "Testing Environment Detection Standards compliance..."
+
+        # Test programmatic detection
+        grep -q "command -v" vscode-stable-updater.sh || exit 1
+        grep -q "/etc/os-release" vscode-stable-updater.sh || exit 1
+        grep -q "uname -m" vscode-stable-updater.sh || exit 1
+        echo "✅ Programmatic detection found"
+
+        # Test comprehensive package manager support
+        grep -q "dnf" vscode-stable-updater.sh || exit 1
+        grep -q "yum" vscode-stable-updater.sh || exit 1
+        grep -q "zypper" vscode-stable-updater.sh || exit 1
+        grep -q "apt" vscode-stable-updater.sh || exit 1
+        echo "✅ Comprehensive package manager support found"
+
+    - name: Test Security Standards
+      run: |
+        echo "Testing Security Standards compliance..."
+
+        # Test input validation
+        grep -q "case.*VSCODE_EDITION" vscode-stable-updater.sh || exit 1
+        echo "✅ Input validation found"
+
+        # Test ownership verification
+        grep -q "\-O" vscode-stable-updater.sh || exit 1
+        echo "✅ Ownership verification found"
+
+        # Test safe path validation
+        grep -q "/tmp/\*\|/var/tmp/\*" vscode-stable-updater.sh || exit 1
+        echo "✅ Safe path validation found"
 
   test-multi-distro:
     name: Test on Multiple Distributions
