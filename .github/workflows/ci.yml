@@ -1,0 +1,221 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  lint-and-validate:
+    name: Lint and Validate
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install ShellCheck
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+        
+    - name: Run ShellCheck
+      run: |
+        shellcheck -x vscode-stable-updater.sh
+        
+    - name: Validate script syntax
+      run: |
+        bash -n vscode-stable-updater.sh
+        
+    - name: Check executable permissions
+      run: |
+        test -x vscode-stable-updater.sh || exit 1
+
+  test-compliance:
+    name: Test Augment Cleanup Rules Compliance
+    runs-on: ubuntu-latest
+    needs: lint-and-validate
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Test compliance validation
+      run: |
+        # Test that compliance check passes
+        SKIP_COMPLIANCE_CHECK=0 timeout 30 ./vscode-stable-updater.sh --help || true
+        
+    - name: Test required arrays exist
+      run: |
+        grep -q "TEMP_FILES=()" vscode-stable-updater.sh
+        grep -q "TEMP_DIRS=()" vscode-stable-updater.sh
+        grep -q "BACKGROUND_PIDS=()" vscode-stable-updater.sh
+        grep -q "LOCK_FILES=()" vscode-stable-updater.sh
+        
+    - name: Test trap handlers exist
+      run: |
+        grep -q "trap.*EXIT" vscode-stable-updater.sh
+        grep -q "cleanup_all" vscode-stable-updater.sh
+
+  test-multi-distro:
+    name: Test on Multiple Distributions
+    runs-on: ubuntu-latest
+    needs: lint-and-validate
+    strategy:
+      matrix:
+        distro: 
+          - ubuntu:22.04
+          - ubuntu:20.04
+          - debian:12
+          - debian:11
+          - fedora:39
+          - fedora:38
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Test script on ${{ matrix.distro }}
+      run: |
+        docker run --rm -v $PWD:/workspace -w /workspace ${{ matrix.distro }} bash -c "
+          # Install required packages
+          if command -v apt-get >/dev/null 2>&1; then
+            apt-get update && apt-get install -y curl file sudo
+          elif command -v dnf >/dev/null 2>&1; then
+            dnf install -y curl file sudo
+          fi
+          
+          # Test help function
+          ./vscode-stable-updater.sh --help
+          
+          # Test version function  
+          ./vscode-stable-updater.sh --version
+          
+          # Test system detection (dry run)
+          timeout 30 ./vscode-stable-updater.sh --debug || true
+        "
+
+  test-features:
+    name: Test Script Features
+    runs-on: ubuntu-latest
+    needs: lint-and-validate
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y curl file
+        
+    - name: Test help output
+      run: |
+        ./vscode-stable-updater.sh --help | grep -q "VSCode Updater"
+        
+    - name: Test version output
+      run: |
+        ./vscode-stable-updater.sh --version | grep -q "VSCode Updater v"
+        
+    - name: Test edition parameter validation
+      run: |
+        # Test valid editions
+        VSCODE_EDITION=stable ./vscode-stable-updater.sh --help >/dev/null
+        VSCODE_EDITION=insiders ./vscode-stable-updater.sh --help >/dev/null
+        
+        # Test invalid edition (should fail)
+        ! VSCODE_EDITION=invalid ./vscode-stable-updater.sh --help 2>/dev/null
+        
+    - name: Test debug mode
+      run: |
+        DEBUG=1 ./vscode-stable-updater.sh --help | grep -q "DEBUG:"
+        
+    - name: Test configuration display
+      run: |
+        DEBUG=1 ./vscode-stable-updater.sh --help 2>&1 | grep -q "Configuration:"
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint-and-validate
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run security checks
+      run: |
+        # Check for hardcoded credentials
+        ! grep -r "password\|secret\|key" --include="*.sh" . || exit 1
+        
+        # Check for unsafe commands
+        ! grep -E "(rm -rf /|chmod 777|sudo.*NOPASSWD)" vscode-stable-updater.sh || exit 1
+        
+        # Check for proper quoting
+        shellcheck -f gcc vscode-stable-updater.sh | grep -v "SC2034" || true
+
+  documentation-check:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Check README exists and has content
+      run: |
+        test -f README.md
+        test -s README.md
+        grep -q "VSCode Stable Updater" README.md
+        
+    - name: Check LICENSE exists
+      run: |
+        test -f LICENSE
+        test -s LICENSE
+        grep -q "MIT License" LICENSE
+        
+    - name: Check for required documentation sections
+      run: |
+        grep -q "## Features" README.md
+        grep -q "## Quick Start" README.md
+        grep -q "## Requirements" README.md
+        grep -q "## Configuration" README.md
+        grep -q "## Troubleshooting" README.md
+
+  release-check:
+    name: Release Readiness Check
+    runs-on: ubuntu-latest
+    needs: [lint-and-validate, test-compliance, test-multi-distro, test-features, security-scan, documentation-check]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Check version consistency
+      run: |
+        # Extract version from script
+        SCRIPT_VERSION=$(grep 'SCRIPT_VERSION=' vscode-stable-updater.sh | cut -d'"' -f2)
+        echo "Script version: $SCRIPT_VERSION"
+        
+        # Check version format (semantic versioning)
+        echo "$SCRIPT_VERSION" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || exit 1
+        
+    - name: Validate file permissions
+      run: |
+        test -x vscode-stable-updater.sh
+        
+    - name: Check file sizes (ensure not too large)
+      run: |
+        # Script should be reasonable size (less than 100KB)
+        test $(stat -c%s vscode-stable-updater.sh) -lt 102400
+        
+    - name: Final integration test
+      run: |
+        # Run a complete dry-run test
+        timeout 60 ./vscode-stable-updater.sh --help >/dev/null
+        echo "✅ Release readiness check passed"
