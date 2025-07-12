@@ -44,17 +44,29 @@ log() {
 
 # Open visible warning terminal window
 open_warning_terminal() {
-    local warning_message="⚠️  VSCode $VSCODE_EDITION Update Warning ⚠️
+    local process_count="$1"
+    local process_list="$2"
+    local warning_message="🚨 CRITICAL: VSCode $VSCODE_EDITION Must Be Closed! 🚨
 
-VSCode $VSCODE_EDITION is currently running and must be closed before updating.
+VSCode $VSCODE_EDITION is currently running with $process_count active processes.
 
-Running processes: $1
+⚠️  UPDATE CANNOT PROCEED while VSCode is running!
 
-Please return to the main terminal to choose an option:
-1. Close VSCode automatically (recommended)
-2. Exit and close manually
+Running VSCode Process IDs:
+$process_list
 
-Press Enter to close this warning window when ready."
+🔧 WHAT TO DO:
+
+OPTION 1 (RECOMMENDED):
+- Press Enter in this window to close it
+- The script will automatically close VSCode for you
+
+OPTION 2 (MANUAL):
+- Close VSCode yourself first
+- Then press Enter in this window
+- The script will continue
+
+Choose your option and press Enter when ready..."
 
     # Use proven working method from rules files
     local display="${DISPLAY:-:0}"
@@ -68,8 +80,18 @@ Press Enter to close this warning window when ready."
             --execute bash -c "
                 echo '$warning_message';
                 echo '';
-                echo 'Press Enter to close this window...';
-                read -r
+                echo 'Press 1 for automatic close, 2 for manual close, or just Enter for automatic:';
+                read -r choice;
+                choice=\${choice:-1};
+                if [[ \$choice == '1' ]]; then
+                    echo 'Closing VSCode automatically...';
+                    pkill -f '$VSCODE_PROCESS_NAME' || true;
+                    echo 'VSCode closed. You can close this window.';
+                else
+                    echo 'Please close VSCode manually, then press Enter...';
+                    read -r;
+                    echo 'You can close this window.';
+                fi
             " &
 
         # Wait for window to appear and verify
@@ -98,43 +120,31 @@ check_vscode_running() {
     mapfile -t vscode_pids < <(pgrep -f "$VSCODE_PROCESS_NAME" 2>/dev/null || true)
 
     if [[ ${#vscode_pids[@]} -gt 0 ]]; then
-        # Open warning terminal window
-        if open_warning_terminal "${vscode_pids[*]}"; then
-            log "INFO" "Warning terminal window opened"
+        # Open warning terminal window with process info
+        local process_count=${#vscode_pids[@]}
+        local process_list="${vscode_pids[*]}"
+        if open_warning_terminal "$process_count" "$process_list"; then
+            log "INFO" "Warning terminal window opened showing $process_count VSCode processes"
             sleep 2  # Give terminal time to appear
         fi
 
         echo ""
-        echo "⚠️  WARNING: VSCode $VSCODE_EDITION is currently running!"
-        echo "Running processes: ${vscode_pids[*]}"
-        echo ""
-        echo "VSCode must be closed before updating."
-        echo "Options:"
-        echo "1. Close VSCode automatically (recommended)"
-        echo "2. Exit and close manually"
+        echo "⚠️  VSCode $VSCODE_EDITION is running (${#vscode_pids[@]} processes)"
+        echo "📋 Check the warning window for details and options"
         echo ""
 
-        if [[ "${AUTO_INSTALL:-0}" == "1" ]]; then
-            echo "Auto-install mode: Closing VSCode automatically..."
-            pkill -f "$VSCODE_PROCESS_NAME" || true
+        # Wait for user to handle VSCode in the warning window
+        echo "Waiting for you to handle VSCode in the warning window..."
+        echo "Press Ctrl+C to cancel if needed"
+
+        # Wait for VSCode to be closed (either automatically or manually)
+        while pgrep -f "$VSCODE_PROCESS_NAME" >/dev/null 2>&1; do
             sleep 2
-        else
-            read -r -p "Choose (1-2) [default: 2]: " choice
-            choice="${choice:-2}"
+            echo -n "."
+        done
 
-            case "$choice" in
-                1)
-                    echo "Closing VSCode $VSCODE_EDITION..."
-                    pkill -f "$VSCODE_PROCESS_NAME" || true
-                    sleep 2
-                    echo "VSCode closed."
-                    ;;
-                2|*)
-                    echo "Please close VSCode $VSCODE_EDITION manually and run the script again."
-                    exit 0
-                    ;;
-            esac
-        fi
+        echo ""
+        echo "✅ VSCode $VSCODE_EDITION has been closed"
 
         # Verify VSCode is closed
         if pgrep -f "$VSCODE_PROCESS_NAME" >/dev/null 2>&1; then
@@ -224,13 +234,119 @@ main() {
     # IMMEDIATE VSCode check - this happens first!
     check_vscode_running
 
-    # Continue with update process
+    # Continue with actual update process
     log "INFO" "VSCode $VSCODE_EDITION update process starting..."
-    log "INFO" "This is a working test version - actual update functionality to be implemented"
-    
+
+    # Detect system and package manager
+    detect_system
+
+    # Download VSCode
+    download_vscode
+
+    # Install VSCode
+    install_vscode
+
     echo ""
-    echo "✅ VSCode $VSCODE_EDITION updater test completed successfully!"
-    echo "The script correctly detected and handled running VSCode processes."
+    echo "✅ VSCode $VSCODE_EDITION update completed successfully!"
+}
+
+# System detection function
+detect_system() {
+    log "INFO" "Detecting system configuration..."
+
+    # Detect distribution
+    if [[ -f /etc/fedora-release ]]; then
+        DISTRO="fedora"
+        PACKAGE_MANAGER="dnf"
+        PACKAGE_FORMAT="rpm"
+    elif [[ -f /etc/debian_version ]]; then
+        DISTRO="debian"
+        PACKAGE_MANAGER="apt"
+        PACKAGE_FORMAT="deb"
+    elif [[ -f /etc/arch-release ]]; then
+        DISTRO="arch"
+        PACKAGE_MANAGER="pacman"
+        PACKAGE_FORMAT="pkg"
+    else
+        log "ERROR" "Unsupported distribution"
+        exit 1
+    fi
+
+    # Detect architecture
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64) ARCH="x64" ;;
+        aarch64) ARCH="arm64" ;;
+        armv7l) ARCH="armhf" ;;
+        *) log "ERROR" "Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+
+    log "SUCCESS" "System detected: $DISTRO ($PACKAGE_MANAGER/$ARCH)"
+}
+
+# Download VSCode function
+download_vscode() {
+    log "INFO" "Downloading VSCode $VSCODE_EDITION..."
+
+    # Construct download URL
+    local base_url="https://code.visualstudio.com/sha/download"
+    local build_type="stable"
+    [[ "$VSCODE_EDITION" == "insiders" ]] && build_type="insider"
+
+    local download_url="$base_url?build=$build_type&os=linux-$PACKAGE_FORMAT-$ARCH"
+    local filename="vscode-$VSCODE_EDITION-$ARCH.$PACKAGE_FORMAT"
+
+    log "INFO" "Download URL: $download_url"
+    log "INFO" "Downloading to: $filename"
+
+    # Download with curl
+    if curl -L -o "$filename" "$download_url"; then
+        log "SUCCESS" "Download completed: $filename"
+        DOWNLOAD_FILE="$filename"
+        return 0
+    else
+        log "ERROR" "Download failed"
+        return 1
+    fi
+}
+
+# Install VSCode function
+install_vscode() {
+    log "INFO" "Installing VSCode $VSCODE_EDITION..."
+
+    if [[ ! -f "$DOWNLOAD_FILE" ]]; then
+        log "ERROR" "Download file not found: $DOWNLOAD_FILE"
+        return 1
+    fi
+
+    case "$PACKAGE_MANAGER" in
+        dnf)
+            log "INFO" "Installing with dnf..."
+            sudo dnf install -y "$DOWNLOAD_FILE"
+            ;;
+        apt)
+            log "INFO" "Installing with apt..."
+            sudo dpkg -i "$DOWNLOAD_FILE" || sudo apt-get install -f -y
+            ;;
+        pacman)
+            log "INFO" "Installing with pacman..."
+            sudo pacman -U --noconfirm "$DOWNLOAD_FILE"
+            ;;
+        *)
+            log "ERROR" "Unsupported package manager: $PACKAGE_MANAGER"
+            return 1
+            ;;
+    esac
+
+    if [[ $? -eq 0 ]]; then
+        log "SUCCESS" "VSCode $VSCODE_EDITION installed successfully"
+        # Clean up download file
+        rm -f "$DOWNLOAD_FILE"
+        return 0
+    else
+        log "ERROR" "Installation failed"
+        return 1
+    fi
 }
 
 # Run main function with all arguments
