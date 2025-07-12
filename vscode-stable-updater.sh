@@ -139,7 +139,7 @@ cleanup_all() {
 trap cleanup_all EXIT INT TERM QUIT
 
 # ========== CONFIGURATION ==========
-SCRIPT_VERSION="2.0.0"
+SCRIPT_VERSION="2.0.0-alpha.1"
 
 # Edition configuration - supports both stable and insiders
 VSCODE_EDITION="${VSCODE_EDITION:-stable}"

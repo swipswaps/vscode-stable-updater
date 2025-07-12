@@ -2,7 +2,11 @@
 
 🚀 **Cross-platform VSCode update script with smart download management and dual-mode support**
 
-A robust, production-ready script for updating Visual Studio Code (both Stable and Insiders editions) on Linux systems with intelligent download management, comprehensive error handling, and excellent user experience.
+⚠️ **ALPHA VERSION - NOT YET TESTED** ⚠️
+
+A robust script for updating Visual Studio Code (both Stable and Insiders editions) on Linux systems with intelligent download management, comprehensive error handling, and excellent user experience.
+
+**Current Status**: Alpha release (v2.0.0-alpha.1) - Linted and compliant but requires testing before production use.
 
 ## ✨ Features
 
